@@ -1,9 +1,10 @@
-// src/api.ts — Axios instance with dynamic base URL
+// src/api.ts — Axios instance for monorepo deployment
 import axios from 'axios';
 
 const api = axios.create({
-  // Use the env variable VITE_API_URL or fallback to localhost for development
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+  // Hardcoded to /api. This works on Vercel (via rewrites) 
+  // and locally (via vite.config.ts proxy).
+  baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
 });
 
