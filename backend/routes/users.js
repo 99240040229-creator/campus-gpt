@@ -1,136 +1,115 @@
-// backend/routes/users.js — Admin: list & update students
 const express = require('express');
-const { getDb } = require('../db');
+const User = require('../models/User');
+const EventRegistration = require('../models/EventRegistration');
+const Announcement = require('../models/Announcement');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
 
-// ─── GET /api/users — Admin: list all students with fee summary ───────────────
+// GET ALL STUDENTS (Admin - includes fee summary)
 router.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const db = await getDb();
+    const students = await User.find({ role: 'student' }).sort({ name: 1 });
 
-    const students = await db.all(
-      `SELECT id, name, email, department, year, register_number, batch, section,
-              faculty_advisor, created_at
-       FROM users WHERE role = 'student' ORDER BY name ASC`
-    );
-
-    // For each student, sum the fees from announcements they registered for
     const enriched = await Promise.all(students.map(async (s) => {
-      const regs = await db.all(
-        `SELECT er.payment_status, a.fee_amount
-         FROM event_registrations er
-         JOIN announcements a ON er.announcement_id = a.id
-         WHERE er.user_id = ?`,
-        [s.id]
-      );
-      const totalFees = regs.reduce((sum, r) => sum + (r.fee_amount || 0), 0);
-      const paidFees  = regs.filter(r => (r.payment_status === 'paid')).reduce((sum, r) => sum + (r.fee_amount || 0), 0);
-      return { ...s, totalFees, paidFees, balance: totalFees - paidFees };
+      // Find all registrations for this student
+      const regs = await EventRegistration.find({ userId: s._id }).populate('announcementId');
+      
+      const totalFees = regs.reduce((sum, r) => {
+        const fee = r.announcementId?.fee_amount || 0;
+        return sum + fee;
+      }, 0);
+
+      const paidFees = regs.filter(r => r.payment_status === 'paid').reduce((sum, r) => {
+        const fee = r.announcementId?.fee_amount || 0;
+        return sum + fee;
+      }, 0);
+
+      const sObj = s.toObject();
+      return { 
+        ...sObj, 
+        id: s._id.toString(),
+        totalFees, 
+        paidFees, 
+        balance: totalFees - paidFees 
+      };
     }));
 
-    return res.json({ students: enriched });
+    res.json({ students: enriched });
   } catch (err) {
-    console.error('Get students error:', err);
-    return res.status(500).json({ error: 'Failed to fetch students.' });
+    console.error('Fetch students error:', err);
+    res.status(500).json({ error: 'Failed to load student details.' });
   }
 });
 
-// ─── PATCH /api/users/:id — Admin: update student academic details ─────────────
-router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { register_number, batch, year, section, faculty_advisor, department } = req.body;
-    const db = await getDb();
-
-    const student = await db.get('SELECT id FROM users WHERE id = ? AND role = ?', [req.params.id, 'student']);
-    if (!student) return res.status(404).json({ error: 'Student not found.' });
-
-    await db.run(
-      `UPDATE users
-         SET register_number = ?, batch = ?, year = ?, section = ?, faculty_advisor = ?, department = ?
-       WHERE id = ?`,
-      [
-        register_number || null,
-        batch || null,
-        year || null,
-        section || null,
-        faculty_advisor || null,
-        department || null,
-        req.params.id,
-      ]
-    );
-
-    const updated = await db.get(
-      `SELECT id, name, email, department, year, register_number, batch, section, faculty_advisor, created_at
-       FROM users WHERE id = ?`,
-      [req.params.id]
-    );
-
-    return res.json({ user: updated });
-  } catch (err) {
-    console.error('Update student error:', err);
-    return res.status(500).json({ error: 'Failed to update student.' });
-  }
-});
-
-// ─── GET /api/users/me/fees — Student: get their own fee summary ───────────────
+// GET STUDENT FEES (Student self)
 router.get('/me/fees', requireAuth, async (req, res) => {
   try {
-    const db = await getDb();
+    const regs = await EventRegistration.find({ userId: req.user.id }).populate('announcementId');
+    
+    const registrations = regs.map(r => ({
+      id: r._id.toString(),
+      title: r.announcementId?.title || 'Unknown Event',
+      fee_amount: r.announcementId?.fee_amount || 0,
+      payment_status: r.payment_status,
+      created_at: r.createdAt
+    }));
 
-    const regs = await db.all(
-      `SELECT er.id, er.payment_status, a.title, a.fee_amount, a.id as announcement_id, er.created_at
-       FROM event_registrations er
-       JOIN announcements a ON er.announcement_id = a.id
-       WHERE er.user_id = ?
-       ORDER BY er.created_at DESC`,
-      [req.user.id]
-    );
+    const totalFees = registrations.reduce((sum, r) => sum + r.fee_amount, 0);
+    const paidFees  = registrations.filter(r => r.payment_status === 'paid').reduce((sum, r) => sum + r.fee_amount, 0);
 
-    const totalFees = regs.reduce((sum, r) => sum + (r.fee_amount || 0), 0);
-    const paidFees  = regs.filter(r => r.payment_status === 'paid').reduce((sum, r) => sum + (r.fee_amount || 0), 0);
-    const balance   = totalFees - paidFees;
-
-    return res.json({ registrations: regs, totalFees, paidFees, balance });
+    res.json({
+      totalFees,
+      paidFees,
+      balance: totalFees - paidFees,
+      registrations
+    });
   } catch (err) {
-    console.error('Get fees error:', err);
-    return res.status(500).json({ error: 'Failed to fetch fee details.' });
+    console.error('Fetch my fees error:', err);
+    res.status(500).json({ error: 'Failed to load fee details.' });
   }
 });
 
-// ─── GET /api/users/:id/registrations — Admin: get regs for student ───────
+// UPDATE STUDENT (Admin)
+router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const s = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!s) return res.status(404).json({ error: 'Student not found.' });
+    res.json({ success: true, student: s });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update student.' });
+  }
+});
+
+// GET REGISTRATIONS FOR STUDENT (Admin)
 router.get('/:id/registrations', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const db = await getDb();
-    const regs = await db.all(
-      `SELECT er.id, er.payment_status, er.created_at, a.title, a.fee_amount
-       FROM event_registrations er
-       JOIN announcements a ON er.announcement_id = a.id
-       WHERE er.user_id = ?
-       ORDER BY er.created_at DESC`,
-      [req.params.id]
-    );
-    return res.json({ registrations: regs });
+    const regs = await EventRegistration.find({ userId: req.params.id }).populate('announcementId');
+    const results = regs.map(r => ({
+      id: r._id.toString(),
+      payment_status: r.payment_status,
+      created_at: r.createdAt,
+      title: r.announcementId?.title || 'Unknown',
+      fee_amount: r.announcementId?.fee_amount || 0
+    }));
+    res.json({ registrations: results });
   } catch (err) {
-    console.error('Get student registrations error:', err);
-    return res.status(500).json({ error: 'Failed to fetch registrations.' });
+    res.status(500).json({ error: 'Failed to fetch registrations.' });
   }
 });
 
-// ─── POST /api/users/registrations/:id/toggle-payment — Admin: toggle status ──
+// TOGGLE PAYMENT STATUS (Admin)
 router.post('/registrations/:id/toggle-payment', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const db = await getDb();
-    const reg = await db.get('SELECT payment_status FROM event_registrations WHERE id = ?', [req.params.id]);
+    const reg = await EventRegistration.findById(req.params.id);
     if (!reg) return res.status(404).json({ error: 'Registration not found.' });
 
-    const newStatus = reg.payment_status === 'paid' ? 'pending' : 'paid';
-    await db.run('UPDATE event_registrations SET payment_status = ? WHERE id = ?', [newStatus, req.params.id]);
+    reg.payment_status = reg.payment_status === 'paid' ? 'pending' : 'paid';
+    await reg.save();
 
-    return res.json({ success: true, newStatus });
+    res.json({ success: true, newStatus: reg.payment_status });
   } catch (err) {
     console.error('Toggle payment error:', err);
-    return res.status(500).json({ error: 'Failed to update payment status.' });
+    res.status(500).json({ error: 'Failed to update payment status.' });
   }
 });
 

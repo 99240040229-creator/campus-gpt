@@ -1,7 +1,8 @@
-// src/api.ts — Axios instance with JWT auto-attach
+// src/api.ts — Axios instance with dynamic base URL
 import axios from 'axios';
 
 const api = axios.create({
+  // Use the env variable VITE_API_URL or fallback to localhost for development
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
   headers: { 'Content-Type': 'application/json' },
 });

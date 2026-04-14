@@ -1,10 +1,11 @@
-// backend/server.js — Express entry point
+// backend/server.js — Express entry point with MongoDB
 require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
+const connectDB = require('./db');
 
-// Import DB pool (triggers connection test on startup)
-require('./db');
+// Connect to MongoDB
+connectDB();
 
 const authRoutes         = require('./routes/auth');
 const announcementRoutes = require('./routes/announcements');
@@ -18,7 +19,8 @@ const PORT = process.env.PORT || 5000;
 app.use(cors({
   origin: [
     process.env.FRONTEND_URL || 'http://localhost:3000',
-    'http://localhost:3001'
+    'http://localhost:3001',
+    'https://campus-gpt-green.vercel.app'
   ],
   credentials: true,
 }));
@@ -26,7 +28,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Decode JWT and attach req.user on every request (non-blocking)
+// Decode JWT and attach req.user on every request
 app.use(attachUser);
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
@@ -36,21 +38,18 @@ app.use('/api/users',         userRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  res.json({ status: 'ok', time: new Date().toISOString(), db: 'mongodb' });
 });
 
-// 404 fallback
 app.use((_req, res) => {
   res.status(404).json({ error: 'Route not found.' });
 });
 
-// Global error handler
 app.use((err, _req, res, _next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ error: err.message || 'Internal server error.' });
 });
 
-// ─── Start ───────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`🚀  CampusConnect API running at http://localhost:${PORT}`);
 });
