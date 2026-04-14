@@ -1,10 +1,9 @@
-// src/api.ts — Axios instance for monorepo deployment
+// src/api.ts — Axios instance for Experimental Services deployment
 import axios from 'axios';
 
 const api = axios.create({
-  // baseURL is intentionally empty because our path strings in the 
-  // components already start with '/api'.
-  baseURL: '',
+  // baseURL matches the 'routePrefix' defined in vercel.json for the backend service
+  baseURL: '/_/backend',
   headers: { 'Content-Type': 'application/json' },
 });
 
