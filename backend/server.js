@@ -1,11 +1,11 @@
-// backend/server.js — Express entry point with MongoDB (Vercel compatible)
+// backend/server.js — Express with enhanced error reporting
 require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const connectDB = require('./db');
 
 // Connect to MongoDB
-connectDB();
+connectDB().catch(err => console.error('Initial DB Connect Fail:', err));
 
 const authRoutes         = require('./routes/auth');
 const announcementRoutes = require('./routes/announcements');
@@ -14,7 +14,6 @@ const { attachUser }     = require('./middleware/auth');
 
 const app  = express();
 
-// ─── Middleware ──────────────────────────────────────────────────────────────
 app.use(cors({
   origin: true,
   credentials: true,
@@ -27,32 +26,37 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(attachUser);
 
-// ─── Routes ─────────────────────────────────────────────────────────────────
-// We mount the routers on both '/' and '/api' to ensure Vercel and Local compatibility
+// Routes
 const mountRoutes = (path) => {
   app.use(`${path}/auth`,          authRoutes);
   app.use(`${path}/announcements`, announcementRoutes);
   app.use(`${path}/users`,         userRoutes);
 };
 
-mountRoutes('/api'); // For Local development
-mountRoutes('');     // For Vercel Serverless routing
+mountRoutes('/api');
+mountRoutes('');
 
-// Health check
 app.get(['/', '/api/health'], (_req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString(), db: 'mongodb' });
-});
-
-app.use((_req, res) => {
-  res.status(404).json({ error: 'Route not found.' });
+  res.json({ 
+    status: 'ok', 
+    db: 'mongodb', 
+    env_check: {
+      has_uri: !!process.env.MONGODB_URI,
+      has_jwt: !!process.env.JWT_SECRET
+    }
+  });
 });
 
 app.use((err, _req, res, _next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: err.message || 'Internal server error.' });
+  console.error('Unhandled internal error:', err);
+  // RETURN THE ERROR MESSAGE TO THE BROWSER FOR DEBUGGING
+  res.status(500).json({ 
+    error: 'Internal server error.', 
+    details: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+  });
 });
 
-// STARTING LOGIC (Only listen if not on Vercel)
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
