@@ -15,10 +15,19 @@ const { attachUser }     = require('./middleware/auth');
 const app  = express();
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
+// COMPLETELY OPEN CORS for easier debugging across Vercel/Local
 app.use(cors({
-  origin: true, // Allow all origins in production for simplicity with Vercel/Local mix
+  origin: function (origin, callback) {
+    // Allow all origins
+    callback(null, true);
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+
+// Handle preflight OPTIONS requests globally
+app.options('*', cors());
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -27,8 +36,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(attachUser);
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
-// All routes are prefixed with /api in vercel.json, but Express also sees its path.
-// If we use rewrites, we should handle paths correctly.
 app.use('/api/auth',          authRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/users',         userRoutes);
