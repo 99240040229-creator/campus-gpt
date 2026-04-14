@@ -15,34 +15,32 @@ const { attachUser }     = require('./middleware/auth');
 const app  = express();
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
-// COMPLETELY OPEN CORS for easier debugging across Vercel/Local
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow all origins
-    callback(null, true);
-  },
+  origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
-// Handle preflight OPTIONS requests globally
 app.options('*', cors());
-
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Decode JWT and attach req.user on every request
 app.use(attachUser);
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
-app.use('/api/auth',          authRoutes);
-app.use('/api/announcements', announcementRoutes);
-app.use('/api/users',         userRoutes);
+// We mount the routers on both '/' and '/api' to ensure Vercel and Local compatibility
+const mountRoutes = (path) => {
+  app.use(`${path}/auth`,          authRoutes);
+  app.use(`${path}/announcements`, announcementRoutes);
+  app.use(`${path}/users`,         userRoutes);
+};
+
+mountRoutes('/api'); // For Local development
+mountRoutes('');     // For Vercel Serverless routing
 
 // Health check
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString(), db: 'mongodb', vercel: true });
+app.get(['/', '/api/health'], (_req, res) => {
+  res.json({ status: 'ok', time: new Date().toISOString(), db: 'mongodb' });
 });
 
 app.use((_req, res) => {
