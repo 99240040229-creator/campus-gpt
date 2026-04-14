@@ -1,4 +1,4 @@
-// backend/server.js — Express entry point with MongoDB
+// backend/server.js — Express entry point with MongoDB (Vercel compatible)
 require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
@@ -13,15 +13,10 @@ const userRoutes         = require('./routes/users');
 const { attachUser }     = require('./middleware/auth');
 
 const app  = express();
-const PORT = process.env.PORT || 5000;
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
 app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'http://localhost:3001',
-    'https://campus-gpt-green.vercel.app'
-  ],
+  origin: true, // Allow all origins in production for simplicity with Vercel/Local mix
   credentials: true,
 }));
 
@@ -32,13 +27,15 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(attachUser);
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
+// All routes are prefixed with /api in vercel.json, but Express also sees its path.
+// If we use rewrites, we should handle paths correctly.
 app.use('/api/auth',          authRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/users',         userRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString(), db: 'mongodb' });
+  res.json({ status: 'ok', time: new Date().toISOString(), db: 'mongodb', vercel: true });
 });
 
 app.use((_req, res) => {
@@ -50,6 +47,12 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err.message || 'Internal server error.' });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀  CampusConnect API running at http://localhost:${PORT}`);
-});
+// STARTING LOGIC (Only listen if not on Vercel)
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 API running at http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
