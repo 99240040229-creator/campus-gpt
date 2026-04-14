@@ -1,4 +1,4 @@
-// backend/server.js — Express with enhanced error reporting
+// backend/server.js — Express with Monorepo Prefix Support
 require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
@@ -26,17 +26,19 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(attachUser);
 
-// Routes
-const mountRoutes = (path) => {
+// ─── Route Mounting ────────────────────────────────────────────────────────
+// We support the standard paths and the custom /_/backend prefix 
+// used by Vercel Experimental Services
+const mountPaths = ['/api', '/_/backend/api', '/_/backend', ''];
+
+mountPaths.forEach(path => {
   app.use(`${path}/auth`,          authRoutes);
   app.use(`${path}/announcements`, announcementRoutes);
   app.use(`${path}/users`,         userRoutes);
-};
+});
 
-mountRoutes('/api');
-mountRoutes('');
-
-app.get(['/', '/api/health'], (_req, res) => {
+// Health check and environment verification
+app.get(['/', '/api/health', '/_/backend/api/health'], (_req, res) => {
   res.json({ 
     status: 'ok', 
     db: 'mongodb', 
@@ -49,11 +51,9 @@ app.get(['/', '/api/health'], (_req, res) => {
 
 app.use((err, _req, res, _next) => {
   console.error('Unhandled internal error:', err);
-  // RETURN THE ERROR MESSAGE TO THE BROWSER FOR DEBUGGING
   res.status(500).json({ 
     error: 'Internal server error.', 
-    details: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+    details: err.message
   });
 });
 
