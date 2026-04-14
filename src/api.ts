@@ -2,9 +2,9 @@
 import axios from 'axios';
 
 const api = axios.create({
-  // Hardcoded to /api. This works on Vercel (via rewrites) 
-  // and locally (via vite.config.ts proxy).
-  baseURL: '/api',
+  // baseURL is intentionally empty because our path strings in the 
+  // components already start with '/api'.
+  baseURL: '',
   headers: { 'Content-Type': 'application/json' },
 });
 
